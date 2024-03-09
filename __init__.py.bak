@@ -1,0 +1,421 @@
+from PySide import QtCore,QtGui
+from functools import partial 
+import time
+import numpy as np
+from h5py import h5p
+import h5py
+class Dict2Widget(QtGui.QWidget):
+    def __init__(self,inputdict,functiondict,parent,checkboxdict = dict(),
+                 minmaxdict=dict(),Hstack = False,**kwargs):
+        super(Dict2Widget,self).__init__(**kwargs)
+        self.inputdict = dict(inputdict)
+        self.functiondict = dict(functiondict)
+        self.widgetdict = dict()
+        self.playoutdict = dict()
+        self.minmaxdict = minmaxdict
+        self.checkboxdict = checkboxdict
+        self.parent = parent
+        self.keylist = str('')
+        self.colorlayout = dict()
+        self.oldsizey = self.size().height()
+        si = QtGui.QSizePolicy();si.Expanding
+        self.setMaximumSize(QtCore.QSize(1000000,10000))
+        self.Hstack = Hstack
+        #self.setSizePolicy(si.Policy.Expanding,si.Policy.Expanding)
+        self.build()
+    def subwidgetsfrompkey(self,pkey,pdict,widglist = []):
+        for key in sorted(pdict.keys()):
+            item = pdict[key]
+            if isinstance(item, dict):
+                widglist.append(pkey+';'+key+';')
+                self.subwidgetsfrompkey(pkey+';'+key,item,widglist)
+            else:
+                widglist.append(pkey+';'+key+';')
+        return widglist
+    def deletewidgetsfrompkey(self,pkey,pdict):
+        self.oldsizey = 0
+        keys =  self.subwidgetsfrompkey(pkey,pdict,[])
+        for key,item in self.widgetdict.items():
+            mkey = key.split(';')[1]
+            if mkey=='ShapeParams':
+                pass
+        for k in keys:
+            if self.widgetdict.has_key(k):
+                tup = self.widgetdict.pop(k)
+                self.oldsizey-=tup[1].size().height()
+                tup[0].setParent(None)
+                tup[1].setParent(None)
+                
+                tup[2].takeAt(0)
+                tup[2].takeAt(0)
+                if tup[3]!=False:
+                    tup[3].setParent(None)
+                    #tup[3].takeAt(0)
+                if len(tup)>4:
+                    if tup[4]!=None:
+                        tup[4].setParent(None)
+                        #tup[4].takeAt(0)
+                        tup[5].setParent(None)
+                        #tup[5].takeAt(0)
+                del tup
+    def rebuild(self,newdict,pkey,chk={},mm={}):
+        self.inputdict[pkey] = newdict
+        layout = self.widgetdict[pkey][2]
+        if isinstance(newdict, dict):
+            for key in sorted(newdict.keys()):
+                item = newdict[key]
+                if chk.has_key(key):ichk = chk[key]
+                else:ichk = False
+                if mm.has_key(key):imm = mm[key]
+                else: imm = None
+                self.keylist = pkey
+                self.newrow(key,item,layout,ichk,imm)
+        else:
+            if chk.has_key(key):ichk = chk[key]
+            else:ichk = False
+            if mm.has_key(key):imm = mm[key]
+            else: imm = None
+            self.keylist = pkey                
+            self.newrow(pkey,newdict,layout,ichk,imm)
+        self.resize(self.size().width(),self.size().height()+self.oldsizey)
+        #self.parent.resize(self.size().width()+100,self.size().height()+self.oldsizey)
+    def build(self):
+        if self.Hstack:self.layout = QtGui.QHBoxLayout()
+        else: self.layout = QtGui.QVBoxLayout()
+        self.playoutdict['Main'] = self.layout
+        self.setLayout(self.layout)
+        for key in sorted(self.inputdict.keys()):
+            item = self.inputdict[key]
+            self.keylist = ''
+            if self.checkboxdict.has_key(key):
+                chitem = self.checkboxdict[key]
+                minmax = self.minmaxdict[key]
+                self.newrow(key, item, self.layout, chk = chitem,mnmx = minmax )
+            else:
+                self.newrow(key,item,self.layout)
+        sizey = len(self.children())*30
+        #self.resize(self.size().width(),sizey)
+    def newrow(self,key,item,parent,chk = False,mnmx=None):
+        if isinstance(item,dict):
+            self.colorlayout[self.oldsizey] = np.random.rand(3)[:]*255
+            parentkey = str(self.keylist)
+            self.keylist+=key+';'
+            label = QtGui.QLabel(key+' :  ')
+            label.setFixedHeight(50)
+            label.setFont(QtGui.QFont('Times',wieght = 5))
+            layout = RandColorLayout([200,100,100])
+            if self.Hstack:layout.addWidget(label)
+            else: parent.addWidget(label)
+            #layout.setSizeConstraint(QtGui.QLayout.SizeConstraint.SetNoConstraint)
+            self.widgetdict[self.keylist] = (label,label,layout,False,None,None)
+            for k in sorted(item.keys()):
+                i = item[k]
+                if isinstance(chk,dict):
+                    if chk.has_key(k):
+                        ci = chk[k]
+                    else: ci=False
+                else: ci = False
+                if isinstance(mnmx,dict):
+                    if mnmx.has_key(k):
+                        mm = mnmx[k]
+                    else: mm=None
+                else: mm = None
+                self.newrow(k,i,layout,chk = ci,mnmx=mm)    
+            
+            self.keylist = str(parentkey)
+            
+            parent.addLayout(layout)
+        else:
+            text = False
+            layout = QtGui.QHBoxLayout()
+            layout.setSizeConstraint(QtGui.QLayout.SizeConstraint.SetNoConstraint)
+            label = QtGui.QLabel(key+' :  ')
+            label.setFont(QtGui.QFont('Times',wieght = 5))
+            label.setFixedHeight(30)
+            layout.addWidget(label)
+            posdig1 = str(item)
+            posdig2 = str(item)[1:]
+            isdig = posdig1.isdigit() or posdig2.isdigit()
+            print type(item),key
+            if isinstance(item,str):
+                print item,'string'
+                text = QtGui.QLineEdit(item)
+                if self.functiondict.has_key(key):
+                    text.editingFinished.connect(self.functiondict[key])
+                self.widgetdict[self.keylist+key+';'] = (label,text,parent,False,None,None)
+                layout.addWidget(text)
+            elif isinstance(item,float)==True or isinstance(item,int) ==True and isdig:
+                text = QtGui.QLineEdit(str(item))
+                if mnmx:
+                    if isinstance(mnmx, list):
+                        if str(mnmx[0]) != 'None':
+                            mintext = QtGui.QLineEdit(str(mnmx[0])) 
+                            maxtext = QtGui.QLineEdit(str(mnmx[1]))
+                        else:
+                            mintext = QtGui.QLineEdit(str(item*0.1)) 
+                            maxtext = QtGui.QLineEdit(str(item*10.))
+                    else:
+                        mintext = QtGui.QLineEdit(str(item*0.1)) 
+                        maxtext = QtGui.QLineEdit(str(item*10.))
+                else:
+                    mintext = QtGui.QLineEdit(str(item*0.1)) 
+                    maxtext = QtGui.QLineEdit(str(item*10.))
+                checkbox = QtGui.QCheckBox()
+                if self.functiondict.has_key(key):
+                    fun = partial(self.functiondict[key],self.keylist+key+';',text)
+                    text.editingFinished.connect(fun)
+                elif self.functiondict.has_key('Enter'):
+                    fun = partial(self.functiondict['Enter'],self.keylist+key+';',text)
+                    text.editingFinished.connect(fun)
+                if self.functiondict.has_key('EnterMinMax'): 
+                    minfun = partial(self.functiondict['EnterMinMax'],self.keylist+key+';',mintext,0)
+                    maxfun = partial(self.functiondict['EnterMinMax'],self.keylist+key+';',maxtext,1)
+                    mintext.editingFinished.connect(minfun)
+                    maxtext.editingFinished.connect(maxfun)
+                if self.functiondict.has_key('EnterChecked'):
+                    fun = partial(self.functiondict['EnterChecked'],self.keylist+key,checkbox)
+                    checkbox.clicked.connect(fun)
+                    checkbox.setChecked(chk)
+                self.widgetdict[self.keylist+key+';'] = (label,text,parent,checkbox,mintext,maxtext)
+                layout.addWidget(text)
+                layout.addWidget(checkbox)
+                if mnmx:
+                    layout.addWidget(mintext)
+                    layout.addWidget(maxtext)
+            elif isinstance(item,list):
+                text = QtGui.QComboBox()
+            
+                if self.functiondict.has_key(key):
+                    fun = partial(self.functiondict[key],text,self.keylist)
+                    text.activated.connect(fun)
+                elif self.functiondict.has_key('EnterCombo'):
+                    fun = partial(self.functiondict['EnterCombo'],self.keylist+key+';',text)
+                    text.activated.connect(fun)
+                s = -1
+                for i in item[0]:
+                    
+                    s+=1
+                    text.insertItem(s,str(i))
+                if any(item[0])==True:
+                    item[0] = map(lambda x: str(x),item[0])
+                try:
+                    text.setCurrentIndex(item[0].index(item[1]))
+                except:text.setCurrentIndex(0)
+                layout.addWidget(text)    
+                try:
+                    self.parent.args.updatestr(self.keylist+key+';', text, 0)
+                except:
+                    print 'no args argument'
+                self.widgetdict[self.keylist+key+';'] = (label,text,parent,False,None,None)
+            elif callable(item):
+                #print key,item
+                text = QtGui.QPushButton(text = key)
+                if self.functiondict.has_key(key):
+                    text.clicked.connect(self.functiondict[key])
+                else:text.clicked.connect(item)
+                self.widgetdict[self.keylist+key+';'] = (label,text,parent,False,None,None)
+                layout.addWidget(text)
+
+            #text.setFixedHeight(30)
+            if text:self.oldsizey+=text.sizeHint().height()*3.0
+            
+            parent.addLayout(layout)
+    def paintEvent(self,e):
+        qp = QtGui.QPainter()
+        qp.begin(self)
+        qp.setBrush(QtGui.QColor(180,200,200))
+        qp.drawRect(0, 0, self.size().width(), self.size().height())
+        stepcolor = 0
+        for key,item in self.widgetdict.items():
+            if len(key.split(';'))==2:
+                stepcolor = min(255,stepcolor+20)
+                qp.setBrush(QtGui.QColor(stepcolor,200,255-stepcolor))
+                if stepcolor>50:stepcolor = 0
+                qp.drawRect(item[0].x(), item[0].y(), item[0].width(), item[0].height())
+        qp.end
+    def returndict(self,key,valtup):
+        kls = list(key.split('_'))
+        startkey = kls.pop(0)
+        sdict = dict()
+        retdict = dict()
+        retdict[startkey] = sdict
+        if len(kls)==0:
+            retdict[startkey] = valtup
+            return (startkey,valtup)
+        elif len(kls)==1:
+            endkey = kls.pop(0)
+            sdict[endkey] = valtup
+            return (startkey,sdict)
+        else:
+            endkey = kls.pop(-1)
+            kls.reverse()
+            valkey = {endkey:valtup}
+            for k in kls:
+                sdict[k] = valkey
+                valkey = dict(retdict)
+            return (startkey,sdict)
+    def updateGUI(self,args):
+        for key in args.keys():
+            if self.inputdict.has_key(key):
+                item = self.inputdict[key]
+                argitem = args[key]
+                self.keylist = ''
+                self.updaterow(key,item,argitem)
+          
+    def hdftodict(self,group,retdict=dict()):
+        for key,item in group.items():
+            if isinstance(item, h5py.Group):
+                retdict[key] = dict()
+                self.hdftodict(item, retdict[key])
+            else:retdict[key] = item.value
+            
+        return retdict
+    def updaterow(self,key,item,argitem):
+        if isinstance(item,dict):
+            parentkey = str(self.keylist)
+            self.keylist+=key+';'
+            #self.widgetdict[self.keylist] = (label,label,layout,False)
+            for k in item.keys():
+                i = item[k]
+                if argitem.has_key(k):
+                    ai = argitem[k]
+                    self.updaterow(k,i,ai)    
+            self.keylist = str(parentkey)
+            
+        else:
+            if isinstance(item,str):
+                try:
+                    text = self.widgetdict[self.keylist+key+';'][1]
+                    text.setText(str(item))
+                    text.textChanged = True
+                    self.functiondict['Enter'](self.keylist+key+';',text)
+                except Exception as e:
+                    print 'something wrong ',e
+            elif isinstance(item,int):
+                try:
+                    text = self.widgetdict[self.keylist+key+';'][1]
+                    text.setText(str(argitem))
+                    #time.sleep(0.1)
+                    text.textChanged = True
+                    if self.functiondict.has_key('Enter'):self.functiondict['Enter'](self.keylist+key+';',text)
+                except Exception as e:print e
+            elif isinstance(item,float):
+                text = self.widgetdict[self.keylist+key+';'][1]
+                text.setText(str(argitem))
+                #time.sleep(0.1)
+                text.textChanged = True
+                if self.functiondict.has_key('Enter'):self.functiondict['Enter'](self.keylist+key+';',text)
+            elif isinstance(item,list):
+                try:
+                    if not key[-2]=='_':
+                        text = self.widgetdict[self.keylist+key+';'][1]
+                        text.clear()
+                        text.insertItems(0,argitem[0])
+                    else:
+                        print key, ' removing'
+                        text = self.widgetdict.pop(self.keylist+key+';')
+                        self.layout().removeWidget(text[1])
+                        self.layout().removeWidget(text[0])
+                        del text[1] 
+                        del text[0]
+                except Exception as e:
+                    print 'there was a problem ',e
+                    print key 
+                    print self.keylist
+            else:
+                
+                try:text = self.widgetdict[self.keylist+key+';'][1]
+                except Exception as e:
+                    print 'something wrong here',e
+                #text.setText(str(item))
+                #text.textChanged = True            
+    @property
+    def valargs(self):
+        retdict = dict()
+        for key,tup in self.widgetdict.items():
+            label,widg,layout,check,minwidg,maxwidg = tup
+            if isinstance(widg,QtGui.QComboBox):
+                val = str(widg.currentText())
+                retdict[key] = (val,check,(-1e10,1e10))
+            elif isinstance(widg,QtGui.QLineEdit) and not str(key).split(';')[-2]=='None':
+                val = str(widg.text())
+                if isinstance(check,QtGui.QCheckBox):
+                    chk = check.isChecked()
+                else:
+                    chk = check
+               
+                if val[0]=='-' or str(val[0]).isdigit() and minwidg:
+                    fval = float(val)
+                    
+                    mincheckey = key.split(';')
+                    maxcheckey = key.split(';')
+                    #checkey.pop(-2)
+                    
+                    mincheckey[-2]=str(minwidg.text())
+                    maxcheckey[-2]=str(maxwidg.text())
+                    mincheck = reduce(lambda x,y: x+';'+y,mincheckey)
+                    maxcheck = reduce(lambda x,y: x+';'+y,maxcheckey)
+                    if not self.widgetdict.has_key(mincheck) and not self.widgetdict.has_key(maxcheck):
+                        minval = float(minwidg.text())
+                        maxval = float(maxwidg.text())
+                        retdict[key] = (fval,chk,(minval,maxval))
+                    elif self.widgetdict.has_key(mincheck) and not self.widgetdict.has_key(maxcheck):
+                        self.addminconstraint(retdict,mincheck,key,float(maxwidg.text()))
+                    elif not self.widgetdict.has_key(mincheck) and self.widgetdict.has_key(maxcheck):
+                        self.addmaxconstraint(retdict, maxcheck, key,float(minwidg.text()))
+                    elif self.widgetdict.has_key(mincheck) and self.widgetdict.has_key(maxcheck):
+                        self.addminmaxconstraint(retdict, mincheck, maxcheck,key)
+                else:retdict[key] = (val,check,(-1e10,1e10))
+                    
+                    #print fval,chk,(minval,maxval)
+                    
+                    #print 'didnt work', val,label.text()
+                    #retdict[key] = (val,check,(-1e10,1e10))
+                    
+        return retdict
+    def addminconstraint(self,retdict,mincheck,key,maxval):
+        #the constrained parameter gets an expression 
+        print 'adding minimum'
+        
+        pval  = float(self.widgetdict[key][1].text())
+        cval = float(self.widgetdict[mincheck][1].text())
+        dval = pval-cval
+        mincheck = mincheck.replace(';','_')
+        retdict[key] = (pval,'Delta_'+mincheck+'+'+mincheck) 
+        #we need to create a delta parameter
+        retdict['Delta_'+mincheck] = (dval,True,(0,maxval-cval))
+    def addmaxconstraint(self,retdict,maxcheck,key,minval):
+        print 'adding maximum'
+        #the constrained parameter gets an expression 
+        
+        pval  = float(self.widgetdict[key][1].text())
+        cval = float(self.widgetdict[maxcheck][1].text())
+        dval = cval-pval
+        maxcheck = maxcheck.replace(';','_')
+        retdict[key] = (pval,maxcheck+'-'+'Delta_'+maxcheck) 
+        #we need to create a delta parameter
+        retdict['Delta_'+maxcheck] = (dval,True,(0,cval-minval))
+    def addminmaxconstraint(self,retdict,mincheck,maxcheck,key):
+        #the constrained parameter gets an expression 
+        print 'adding minimum and maximum'
+        
+        pval  = float(self.widgetdict[key][1].text())
+        cvalmax = float(self.widgetdict[maxcheck][1].text())
+        cvalmin = float(self.widgetdict[mincheck][1].text())
+        maxcheck = maxcheck.replace(';','_')
+        dval = cvalmax-pval
+        pvalexpr = maxcheck+'-'+'Delta_'+maxcheck+'_'+mincheck
+        retdict[key] = (pval,pvalexpr + ' if '+pvalexpr +'>'+mincheck \
+                        +' else ' +mincheck+'*1.01') 
+        #we need to create a delta parameter
+        retdict['Delta_'+maxcheck] = (dval,True,(0,1e10))
+class RandColorLayout(QtGui.QVBoxLayout):
+    def __init__(self,color):
+        super(RandColorLayout,self).__init__()
+        self.color = [255-color[0],255-color[1],255-color[2]]
+    def paintEvent(self,e):
+        qp = QtGui.QPainter()
+        qp.begin(self)
+        qp.setBrush(QtGui.QColor(self.color))
+        qp.drawRect(0, 0, self.size().width(), self.size().height())
+        qp.end
